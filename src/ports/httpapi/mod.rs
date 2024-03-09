@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use axum::extract::{MatchedPath, Path, Request, State};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{http, Json, Router};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -10,7 +11,24 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use crate::app::command::create_short_url::CreateShortUrlRepository;
 use crate::app::query::get_full_url::GetFullUrlRepository;
 use crate::di::Container;
+use crate::error::AppError;
 use crate::id_provider::IDProvider;
+
+#[derive(Serialize, Deserialize)]
+struct ErrorResponse {
+    message: String,
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            AppError::URLParseError => (http::StatusCode::BAD_REQUEST, "Invalid URL".to_owned()),
+            AppError::NotFound => (http::StatusCode::NOT_FOUND, "Not found".to_owned()),
+        };
+
+        (status, Json(ErrorResponse { message })).into_response()
+    }
+}
 
 pub struct Server<I, R, Q>
 where
@@ -88,7 +106,7 @@ struct ShortUrlResponse {
 async fn shorten_url<I, R, Q>(
     State(container): State<Arc<Container<I, R, Q>>>,
     Json(input): Json<CreateShortURLRequest>,
-) -> Result<Json<ShortUrlResponse>, String>
+) -> Result<Json<ShortUrlResponse>, AppError>
 where
     I: IDProvider + Send + Sync + 'static,
     R: CreateShortUrlRepository + Send + Sync + 'static,
@@ -96,7 +114,7 @@ where
 {
     container
         .shorten_command
-        .execute(input.url)
+        .execute(&input.url)
         .await
         .map(|id| Json(ShortUrlResponse { id }))
 }
@@ -112,10 +130,10 @@ impl From<String> for FullUrlResponse {
     }
 }
 
-async fn get_full_url<I, R, Q>(
+async fn get_full_url<I, Q, R>(
     Path(id): Path<String>,
     State(container): State<Arc<Container<I, R, Q>>>,
-) -> Result<Json<FullUrlResponse>, String>
+) -> Result<Json<FullUrlResponse>, AppError>
 where
     I: IDProvider + Send + Sync + 'static,
     R: CreateShortUrlRepository + Send + Sync + 'static,
@@ -195,8 +213,11 @@ mod tests {
             .unwrap();
 
         // Then
+        assert_eq!(response.status(), http::StatusCode::NOT_FOUND);
+
         let body = response.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(&body[..], b"Not found")
+        let body: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body.message, "Not found");
     }
 
     #[tokio::test]

@@ -1,5 +1,10 @@
+use crate::error::AppError;
+
 pub trait GetFullUrlRepository {
-    fn get(&self, id: &str) -> Result<String, String>;
+    fn get(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<String, AppError>> + std::marker::Send;
 }
 
 pub struct GetFullUrlQuery<R>
@@ -17,8 +22,8 @@ where
         Self { repo }
     }
 
-    pub async fn execute(&self, id: &str) -> Result<String, String> {
-        self.repo.get(id)
+    pub async fn execute(&self, id: &str) -> Result<String, AppError> {
+        self.repo.get(id).await
     }
 }
 
@@ -37,7 +42,7 @@ mod test {
         // Given
         struct FakeRepository;
         impl GetFullUrlRepository for FakeRepository {
-            fn get(&self, _id: &str) -> Result<String, String> {
+            async fn get(&self, _id: &str) -> Result<String, AppError> {
                 Ok("https://www.google.com".to_owned())
             }
         }
