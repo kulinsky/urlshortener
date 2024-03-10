@@ -96,4 +96,20 @@ mod tests {
         let full_url = store.get(&id).unwrap();
         assert_eq!(full_url.value(), "https://www.google.com/");
     }
+
+    #[tokio::test]
+    async fn test_for_invalid_url() {
+        // Given
+        let idp = crate::id_provider::NanoIDProvider;
+        let store = Arc::new(DashMap::new());
+        let repo = InMemoryRepository::new(store);
+        let command = CreateShortUrlCommand::new(idp, repo);
+
+        // When
+        let result = command.execute("google").await;
+
+        // Then
+        assert!(result.is_err());
+        assert_eq!(result, Err(AppError::URLParseError));
+    }
 }

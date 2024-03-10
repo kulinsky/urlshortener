@@ -331,4 +331,35 @@ mod tests {
         let body: FullUrlResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(body.url, "https://example.com/");
     }
+
+    #[tokio::test]
+    async fn test_invalid_url() {
+        // Given
+        let router = get_router_with_mock_container();
+        let create_short_url_request = CreateShortURLRequest {
+            url: "invalid-url".to_owned(),
+        };
+
+        // When
+        let response = router
+            .oneshot(
+                http::Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/")
+                    .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+                    .body(Body::from(
+                        serde_json::to_string(&create_short_url_request).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Then
+        assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body.message, "Invalid URL");
+    }
 }
