@@ -1,11 +1,11 @@
+use async_trait::async_trait;
+
 use crate::{error::AppError, id_provider::IDProvider};
 
+#[mockall::automock]
+#[async_trait]
 pub trait CreateShortUrlRepository {
-    fn save(
-        &self,
-        full_url: String,
-        id: String,
-    ) -> impl std::future::Future<Output = Result<(), AppError>> + std::marker::Send;
+    async fn save(&self, full_url: String, id: String) -> Result<(), AppError>;
 }
 
 pub struct CreateShortUrlCommand<I, R>
@@ -44,9 +44,30 @@ mod tests {
 
     use dashmap::DashMap;
 
-    use crate::adapters::inmemory::InMemoryRepository;
+    use crate::{adapters::inmemory::InMemoryRepository, id_provider::MockIDProvider};
 
     use super::*;
+
+    #[tokio::test]
+    async fn get_short_url_with_mock() {
+        // Given
+        let mut stub_id_provider = MockIDProvider::new();
+        stub_id_provider
+            .expect_provide()
+            .returning(|| "123".to_owned())
+            .times(1);
+
+        let mut mock_repo = MockCreateShortUrlRepository::new();
+        mock_repo.expect_save().returning(|_, _| Ok(())).times(1);
+
+        let sut = CreateShortUrlCommand::new(stub_id_provider, mock_repo);
+
+        // When
+        let result = sut.execute("https://www.google.com").await;
+
+        // Then
+        assert_eq!(result, Ok("123".to_owned()));
+    }
 
     #[tokio::test]
     async fn get_short_url() {
